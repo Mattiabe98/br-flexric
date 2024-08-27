@@ -258,6 +258,46 @@ Follow OSC nearRT-RIC installation guide. The xApp can be found at https://githu
 
 Recorded presentation at Phoenix, October 2023 (4th minute): https://zoom.us/rec/play/N5mnAQUcEVRf8HN6qLYa4k7kjNq3bK4hQiYqHGv9KUoLfcR6GHiE-GvnmAudT6xccmZSbkxxYHRwTaxk.Zi7d8Sl1kQ6Sk1SH?canPlayFromShare=true&from=share_recording_detail&continueMode=true&componentName=rec-play&originRequestUrl=https%3A%2F%2Fzoom.us%2Frec%2Fshare%2FwiYXulPlAqIIDY_vLPQSGqYIj-e5Ef_UCxveMjrDNGgXLLvEcDF4v1cmVBe8imb4.WPi-DA_dfPDBQ0FH
 
+## Setting up Grafana with rfsim
+1. Install Grafana on Ubuntu:
+'''bash
+sudo apt-get install -y apt-transport-https software-properties-common wget
+sudo mkdir -p /etc/apt/keyrings/
+wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee -a /etc/apt/sources.list.d/grafana.list
+sudo apt-get update
+sudo apt-get install grafana
+'''
+
+2. Start Grafana service:
+'''bash
+sudo systemctl start grafana-server
+'''
+
+3. Install SQLite plugin for Grafana:
+'''bash
+sudo grafana-cli plugins install frser-sqlite-datasource
+sudo systemctl restart grafana-server
+'''
+
+4. Create flexric directory and set permissions:
+'''bash
+sudo mkdir /flexric && sudo chmod 777 /flexric
+'''
+
+5. Import data source:
+- Open Grafana in your web browser (at `http://localhost:3000`)
+- Go to Configuration > Data Sources
+- Click "Add data source"
+- Select "SQLite"
+- Set the path to `/flexric/xapp_db`
+- Save and test the connection
+
+6. Import the dashboard:
+- In Grafana, go to dashboards > New > Import
+- Upload the JSON file `grafana-dashboard.json` in flexric directory for your dashboard
+- Select the SQLite data source you just created
+
 ## 5. Support/further resources
 
 * Mailing list: if you need help or have some questions, you can subscribe to the mailing list `techs@mosaic-5g.io` that you can find at
