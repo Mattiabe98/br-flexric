@@ -260,30 +260,30 @@ Recorded presentation at Phoenix, October 2023 (4th minute): https://zoom.us/rec
 
 ## Setting up Grafana with rfsim
 1. Install Grafana on Ubuntu:
-'''bash
+```bash
 sudo apt-get install -y apt-transport-https software-properties-common wget
 sudo mkdir -p /etc/apt/keyrings/
 wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee -a /etc/apt/sources.list.d/grafana.list
 sudo apt-get update
 sudo apt-get install grafana
-'''
+```
 
 2. Start Grafana service:
-'''bash
+```bash
 sudo systemctl start grafana-server
-'''
+```
 
 3. Install SQLite plugin for Grafana:
-'''bash
+```bash
 sudo grafana-cli plugins install frser-sqlite-datasource
 sudo systemctl restart grafana-server
-'''
+```
 
 4. Create flexric directory and set permissions:
-'''bash
+```bash
 sudo mkdir /flexric && sudo chmod 777 /flexric
-'''
+```
 
 5. Import data source:
 - Open Grafana in your web browser (at `http://localhost:3000`)
