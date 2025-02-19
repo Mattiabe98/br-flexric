@@ -31,18 +31,70 @@
 #include <signal.h>
 #include <pthread.h>
 
-typedef enum {
-  RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID = 202, // 8.2.4  RAN Parameters for Report Service Style 4
+#include "NR_DL-DCCH-Message.h"
+#include "NR_RRCReconfiguration.h"
+#include "NR_CellGroupConfig.h"
 
-  END_E2SM_RC_RAN_PARAM_ID
-} ran_param_id_e;
+typedef enum {    // 8.2.1 RAN Parameters for Report Service Style 1
+  E2SM_RC_RS1_UE_EVENT_ID = 1,
+  E2SM_RC_RS1_NI_MESSAGE = 2,
+  E2SM_RC_RS1_RRC_MESSAGE = 3,
+  E2SM_RC_RS1_UE_ID = 4,
+  E2SM_RC_RS1_OLD_AMF_UE_NGAP_ID = 5,
+  E2SM_RC_RS1_CELL_GLOBAL_ID = 6,
+
+  END_E2SM_RC_RS1_RAN_PARAM_ID
+} report_style_1_ran_param_id_e;
+
+typedef enum {    // 8.2.2 RAN Parameters for Report Service Style 2
+  E2SM_RC_RS2_CURRENT_UE_ID = 1,
+  E2SM_RC_RS2_OLD_UE_ID = 2,
+  E2SM_RC_RS2_CURRENT_RRC_STATE = 3,
+  E2SM_RC_RS2_OLD_RRC_STATE = 4,
+  E2SM_RC_RS2_UE_CONTEXT_INFORMATION_CONTAINER = 5,
+  E2SM_RC_RS2_CELL_GLOBAL_ID = 6,
+  E2SM_RC_RS2_UE_INFORMATION = 7,
+
+  END_E2SM_RC_RS2_RAN_PARAM_ID
+} report_style_2_ran_param_id_e;
+
+typedef enum {    // 8.2.3 RAN Parameters for Report Service Style 3
+  E2SM_RC_RS3_CELL_CONTEXT_INFORMATION = 1,
+  E2SM_RC_RS3_CELL_DELETED = 2,
+  E2SM_RC_RS3_NEIGHBOUR_RELATION_TABLE = 3,
+
+  END_E2SM_RC_RS3_RAN_PARAM_ID
+} report_style_3_ran_param_id_e;
+
+typedef enum {    // 8.2.4 RAN Parameters for Report Service Style 4
+  E2SM_RC_RS4_UL_MAC_CE = 100,
+  E2SM_RC_RS4_DL_MAC_CE = 101,
+  E2SM_RC_RS4_DL_BUFFER_OCCUPANCY = 102,
+  E2SM_RC_RS4_CURRENT_RRC_STATE = 201,
+  E2SM_RC_RS4_RRC_STATE_CHANGED_TO = 202,
+  E2SM_RC_RS4_RRC_MESSAGE = 203,
+  E2SM_RC_RS4_OLD_UE_ID = 300,
+  E2SM_RC_RS4_CURRENT_UE_ID = 301,
+  E2SM_RC_RS4_NI_MESSAGE = 302,
+  E2SM_RC_RS4_CELL_GLOBAL_ID = 400,
+
+  END_E2SM_RC_RS4_RAN_PARAM_ID
+} report_style_4_ran_param_id_e;
+
+typedef enum {    // 8.2.5 RAN Parameters for Report Service Style 5
+  E2SM_RC_RS5_UE_CONTEXT_INFORMATION = 1,
+  E2SM_RC_RS5_CELL_CONTEXT_INFORMATION = 2,
+  E2SM_RC_RS5_NEIGHBOUR_RELATION_TABLE = 3,
+
+  END_E2SM_RC_RS5_RAN_PARAM_ID
+} report_style_5_ran_param_id_e;
 
 static
 pthread_mutex_t mtx;
 
 // Print integer value
 static
-void log_int_ran_param_value(int64_t value)
+void log_int_ran_param_value_rrc_state(int64_t value)
 {
   if (value == RRC_CONNECTED_RRC_STATE_E2SM_RC) {
     printf("RAN Parameter Value = RRC_Connected\n");
@@ -53,31 +105,59 @@ void log_int_ran_param_value(int64_t value)
   }
 }
 
+//Print Octet String value
 static
-void log_element_ran_param_value(ran_parameter_value_t* param_value)
+void log_octet_str_ran_param_value(byte_array_t octet_str, uint32_t id)
+{
+  switch (id) {
+    case E2SM_RC_RS1_RRC_MESSAGE:
+      printf("\nDecode and print RRC Message!\n");
+      NR_DL_DCCH_Message_t *msg = NULL;
+      asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_DL_DCCH_Message,
+                                        (void **)&msg, octet_str.buf, octet_str.len, 0, 0);
+      assert(dec_rval.code == RC_OK);
+      xer_fprint(stdout, &asn_DEF_NR_DL_DCCH_Message, msg);
+
+      assert(msg->message.present == NR_DL_DCCH_MessageType_PR_c1);
+      assert(msg->message.choice.c1->present == NR_DL_DCCH_MessageType__c1_PR_rrcReconfiguration);
+      NR_RRCReconfiguration_t *reconfig = msg->message.choice.c1->choice.rrcReconfiguration;
+
+      assert(reconfig->criticalExtensions.present == NR_RRCReconfiguration__criticalExtensions_PR_rrcReconfiguration);
+      NR_RRCReconfiguration_IEs_t *ies = reconfig->criticalExtensions.choice.rrcReconfiguration;
+      assert(ies->nonCriticalExtension != NULL);
+      assert(ies->nonCriticalExtension->masterCellGroup != NULL);
+      OCTET_STRING_t *binary_cellGroupConfig = ies->nonCriticalExtension->masterCellGroup;
+      NR_CellGroupConfig_t *cellGroupConfig = NULL;
+      dec_rval = uper_decode(NULL, &asn_DEF_NR_CellGroupConfig,
+                             (void **)&cellGroupConfig, binary_cellGroupConfig->buf,
+                             binary_cellGroupConfig->size, 0, 0);
+      assert(dec_rval.code == RC_OK);
+      printf("Decoded CellGroupConfig message:\n");
+      xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, cellGroupConfig);
+      ASN_STRUCT_FREE(asn_DEF_NR_DL_DCCH_Message, msg);
+      break;
+
+    default:
+      printf("Only decoding for RRC Message is supported!\n");
+  }
+}
+
+static
+void log_element_ran_param_value(ran_parameter_value_t* param_value, uint32_t id)
 {
   assert(param_value != NULL);
 
   switch (param_value->type) {
     case INTEGER_RAN_PARAMETER_VALUE:
-      log_int_ran_param_value(param_value->int_ran);
+      log_int_ran_param_value_rrc_state(param_value->int_ran);
+      break;
+
+    case OCTET_STRING_RAN_PARAMETER_VALUE:
+      log_octet_str_ran_param_value(param_value->octet_str_ran, id);
       break;
 
     default:
-      printf("Add corresponding print function for the RAN Parameter Value (other than integer)\n");
-  }
-}
-
-static
-void log_ran_param_name(uint32_t id)
-{
-  switch (id) {
-    case RRC_STATE_CHANGED_TO_E2SM_RC_RAN_PARAM_ID:
-      printf("RAN Parameter Name = RRC State Changed To\n");
-      break;
-
-    default:
-      printf("Add corresponding RAN Parameter ID\n");
+      printf("Add corresponding print function for the RAN Parameter Value (other than Integer and Octet string)\n");
   }
 }
 
@@ -100,13 +180,72 @@ void log_gnb_id_e2sm(gnb_e2sm_t* gnb)
 }
 
 static
-void sm_cb_rc(sm_ag_if_rd_t const* rd)
+void log_ran_param_name_frmt_1(uint32_t id)
 {
-  assert(rd != NULL);
-  assert(rd->type == INDICATION_MSG_AGENT_IF_ANS_V0);
+  switch (id) {
+    case E2SM_RC_RS1_RRC_MESSAGE:
+      printf("RAN Parameter Name = RRC Message\n");
+      break;
 
-  // Reading Indication Message Format 2
-  e2sm_rc_ind_msg_frmt_2_t const* ind_msg_frmt_2 = &rd->ind.rc.ind.msg.frmt_2;
+    default:
+      printf("Add corresponding RAN Parameter ID for REPORT Service Style 1\n");
+  }
+}
+
+static
+void log_ind_msg_frmt_1(const e2sm_rc_ind_msg_t* msg)
+{
+  /* log properly format 1 with "RRC Message" and "UE ID" RAN Parameter IDs*/
+  const e2sm_rc_ind_msg_frmt_1_t* ind_msg_frmt_1 = &msg->frmt_1;
+
+  static int counter = 1;
+  {
+    lock_guard(&mtx);
+
+    printf("\n%7d RC Indication Message\n", counter);
+
+    // List parameters
+    for (size_t j = 0; j < ind_msg_frmt_1->sz_seq_ran_param; j++) {
+      seq_ran_param_t* const ran_param_item = &ind_msg_frmt_1->seq_ran_param[j];
+
+      log_ran_param_name_frmt_1(ran_param_item->ran_param_id);
+      printf("RAN Parameter ID is: %d\n", ran_param_item->ran_param_id);
+
+      switch (ran_param_item->ran_param_val.type) {
+        case ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE:
+          log_element_ran_param_value(ran_param_item->ran_param_val.flag_false, ran_param_item->ran_param_id);
+          break;
+
+        case ELEMENT_KEY_FLAG_TRUE_RAN_PARAMETER_VAL_TYPE:
+          log_element_ran_param_value(ran_param_item->ran_param_val.flag_true, ran_param_item->ran_param_id);
+          break;
+
+        default:
+          printf("Add corresponding function for the RAN Parameter Value Type (other than element)\n");
+      }
+    }
+
+    counter++;
+  }
+}
+
+static
+void log_ran_param_name_frmt_2(uint32_t id)
+{
+  switch (id) {
+    case E2SM_RC_RS4_RRC_STATE_CHANGED_TO:
+      printf("RAN Parameter Name = RRC State Changed To\n");
+      break;
+
+    default:
+      printf("Add corresponding RAN Parameter ID for REPORT Service Style 4\n");
+  }
+}
+
+static
+void log_ind_msg_frmt_2(const e2sm_rc_ind_msg_t* msg)
+{
+  const e2sm_rc_ind_msg_frmt_2_t* ind_msg_frmt_2 = &msg->frmt_2;
 
   static int counter = 1;
   {
@@ -130,15 +269,16 @@ void sm_cb_rc(sm_ag_if_rd_t const* rd)
       for (size_t j = 0; j < ue_id_item->sz_seq_ran_param; j++) {
         seq_ran_param_t* const ran_param_item = &ue_id_item->seq_ran_param[j];
 
-        log_ran_param_name(ran_param_item->ran_param_id);
+        log_ran_param_name_frmt_2(ran_param_item->ran_param_id);
+        printf("RAN Parameter ID is: %d\n", ran_param_item->ran_param_id);
 
         switch (ran_param_item->ran_param_val.type) {
           case ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE:
-            log_element_ran_param_value(ran_param_item->ran_param_val.flag_false);
+            log_element_ran_param_value(ran_param_item->ran_param_val.flag_false, ran_param_item->ran_param_id);
             break;
 
           case ELEMENT_KEY_FLAG_TRUE_RAN_PARAMETER_VAL_TYPE:
-            log_element_ran_param_value(ran_param_item->ran_param_val.flag_true);
+            log_element_ran_param_value(ran_param_item->ran_param_val.flag_true, ran_param_item->ran_param_id);
             break;
 
           default:
@@ -150,6 +290,29 @@ void sm_cb_rc(sm_ag_if_rd_t const* rd)
     counter++;
   }
 }
+
+typedef void (*log_ind_msg_data)(const e2sm_rc_ind_msg_t* msg);
+
+static
+log_ind_msg_data rc_msg[END_E2SM_RC_IND_MSG] = {
+  log_ind_msg_frmt_1,
+  log_ind_msg_frmt_2,
+  NULL,
+  NULL,
+  NULL,
+};
+
+static
+void sm_cb_rc(sm_ag_if_rd_t const* rd)
+{
+  assert(rd != NULL);
+  assert(rd->type == INDICATION_MSG_AGENT_IF_ANS_V0);
+
+  // log properly INDICATION formats
+  const e2sm_rc_ind_msg_format_e type = rd->ind.rc.ind.msg.format;
+  rc_msg[type](&rd->ind.rc.ind.msg);
+}
+
 
 static
 rrc_state_lst_t fill_rrc_state_change(void)
@@ -235,20 +398,116 @@ param_report_def_t fill_param_report(uint32_t const ran_param_id, ran_param_def_
 }
 
 static
-rc_sub_data_t gen_rc_sub_msg(ran_func_def_report_t const* ran_func)
+rrc_msg_id_t fill_rrc_msg_id_3(void)
 {
-  assert(ran_func != NULL);
+  rrc_msg_id_t rrc_msg_id = {0};
+
+  // CHOICE RRC Message Type
+  rrc_msg_id.type = NR_RRC_MESSAGE_ID;
+
+  switch (rrc_msg_id.type) {
+    case NR_RRC_MESSAGE_ID: {
+      rrc_msg_id.nr = DL_DCCH_NR_RRC_CLASS; // RRC Message Class
+      rrc_msg_id.rrc_msg_id = 1; // RRC Message ID
+      break;
+    }
+
+    default:
+      assert(false && "Add LTE RRC Message type. At the moment, only NR RRC Message type is supported");
+  }
+
+  return rrc_msg_id;
+}
+
+static
+msg_ev_trg_t fill_msg_ev_trig_3(msg_type_ev_trg_e const trigger_type)
+{
+  msg_ev_trg_t msg_ev_trig = {0};
+
+  //  Event Trigger Condition ID
+  //  Mandatory
+  //  9.3.21
+  msg_ev_trig.ev_trigger_cond_id = 1; // this parameter contains rnd value, but must be matched in ind hdr
+  /* For each information change configured, Event Trigger Condition ID is assigned
+  so that E2 Node can reply to Near-RT RIC in the RIC INDICATION message to inform
+  which event(s) are the cause for triggering. */
+
+  // CHOICE Trigger Type
+  msg_ev_trig.msg_type = trigger_type;
+
+  if (trigger_type == RRC_MSG_MSG_TYPE_EV_TRG) {
+    msg_ev_trig.rrc_msg = fill_rrc_msg_id_3();
+  }
+  else {
+    assert(false && "Incorrect Trigger Type for Event Trigger Type 1!");
+  }
+
+  // Message Direction
+  // Optional
+  msg_ev_trig.msg_dir = NULL;
+
+  // Associated UE Info
+  // Optional
+  // 9.3.26
+  msg_ev_trig.assoc_ue_info = NULL;
+
+  // Logical OR
+  // Optional
+  // 9.3.25
+  msg_ev_trig.log_or = NULL;
+
+  return msg_ev_trig;
+}
+
+static
+rc_sub_data_t gen_rc_sub_msg(const seq_report_sty_t *report_sty)
+{
+  assert(report_sty != NULL);
 
   rc_sub_data_t rc_sub = {0};
 
-  for (size_t i = 0; i < ran_func->sz_seq_report_sty; i++) {
-    // as defined in section 7.4.5, formats used for SUBSCRIPTION msg are known
-    assert(cmp_str_ba("UE Information", ran_func->seq_report_sty[i].name) == 0 && "Add requested REPORT Style. At the moment, only UE Information supported");
-    
-    size_t const sz = ran_func->seq_report_sty[i].sz_seq_ran_param;
+  if (cmp_str_ba("Message Copy", report_sty->name) == 0) {  // as defined in section 7.4.2, formats used for SUBSCRIPTION msg are known
+    // fill properly Event Trigger Format 1 and Action Definition Format 1 with "RRC Message" RAN Parameter IDs      
+    size_t const sz_1 = report_sty->sz_seq_ran_param;
+    printf("REPORT Format 1! Number of RAN Parameters is %ld\n", sz_1);
 
     // Generate Event Trigger
-    rc_sub.et.format = ran_func->seq_report_sty[i].ev_trig_type;
+    rc_sub.et.format = report_sty->ev_trig_type;
+    assert(rc_sub.et.format == FORMAT_1_E2SM_RC_EV_TRIGGER_FORMAT && "Event Trigger Format received not valid");
+    rc_sub.et.frmt_1.sz_msg_ev_trg = sz_1;
+    rc_sub.et.frmt_1.msg_ev_trg = calloc(sz_1, sizeof(msg_ev_trg_t));
+    assert(rc_sub.et.frmt_1.msg_ev_trg != NULL && "Memory exhausted");
+
+    // Generate Action Definition
+    rc_sub.sz_ad = 1;
+    rc_sub.ad = calloc(rc_sub.sz_ad, sizeof(e2sm_rc_action_def_t));
+    assert(rc_sub.ad != NULL && "Memory exhausted");
+    rc_sub.ad[0].ric_style_type = 1; // REPORT Service Style 1: Message Copy
+    rc_sub.ad[0].format = report_sty->act_frmt_type;
+    assert(rc_sub.ad[0].format == FORMAT_1_E2SM_RC_ACT_DEF && "Action Definition Format received not valid");
+    rc_sub.ad[0].frmt_1.sz_param_report_def = sz_1;
+    rc_sub.ad[0].frmt_1.param_report_def = calloc(sz_1, sizeof(param_report_def_t));
+    assert(rc_sub.ad[0].frmt_1.param_report_def != NULL && "Memory exhausted");
+
+    // Fill RAN Parameter Info
+    for (size_t j = 0; j < sz_1; j++) {
+      msg_type_ev_trg_e const trigger_type = RRC_MSG_MSG_TYPE_EV_TRG;
+      uint32_t const ran_param_id = report_sty->ran_param[j].id;
+      ran_param_def_t const* ran_param_def = report_sty->ran_param[j].def;
+
+      // Fill Event Trigger
+      if (cmp_str_ba("RRC Message", report_sty->ran_param[j].name) == 0) {
+        rc_sub.et.frmt_1.msg_ev_trg[j] = fill_msg_ev_trig_3(trigger_type);
+      }
+
+      // Fill Action Definition
+      rc_sub.ad[0].frmt_1.param_report_def[j] = fill_param_report(ran_param_id, ran_param_def);
+    }      
+  } else if (cmp_str_ba("UE Information", report_sty->name) == 0) {  // as defined in section 7.4.5, formats used for SUBSCRIPTION msg are known
+    size_t const sz = report_sty->sz_seq_ran_param;
+
+    // Generate Event Trigger
+    rc_sub.et.format = report_sty->ev_trig_type;
     assert(rc_sub.et.format == FORMAT_4_E2SM_RC_EV_TRIGGER_FORMAT && "Event Trigger Format received not valid");
     rc_sub.et.frmt_4.sz_ue_info_chng = sz;
     rc_sub.et.frmt_4.ue_info_chng = calloc(sz, sizeof(ue_info_chng_t));
@@ -259,7 +518,7 @@ rc_sub_data_t gen_rc_sub_msg(ran_func_def_report_t const* ran_func)
     rc_sub.ad = calloc(rc_sub.sz_ad, sizeof(e2sm_rc_action_def_t));
     assert(rc_sub.ad != NULL && "Memory exhausted");
     rc_sub.ad[0].ric_style_type = 4; // REPORT Service Style 4: UE Information
-    rc_sub.ad[0].format = ran_func->seq_report_sty[i].act_frmt_type;
+    rc_sub.ad[0].format = report_sty->act_frmt_type;
     assert(rc_sub.ad[0].format == FORMAT_1_E2SM_RC_ACT_DEF && "Action Definition Format received not valid");
     rc_sub.ad[0].frmt_1.sz_param_report_def = sz;
     rc_sub.ad[0].frmt_1.param_report_def = calloc(sz, sizeof(param_report_def_t));
@@ -267,11 +526,11 @@ rc_sub_data_t gen_rc_sub_msg(ran_func_def_report_t const* ran_func)
 
     // Fill RAN Parameter Info
     for (size_t j = 0; j < sz; j++) {
-      assert(cmp_str_ba("RRC State", ran_func->seq_report_sty[i].ran_param[j].name) == 0 && "Add requested RAN Parameter. At the moment, only RRC State supported");
+      assert(cmp_str_ba("RRC State Changed To", report_sty->ran_param[j].name) == 0 && "Add requested RAN Parameter. At the moment, only RRC State supported");
 
       ue_info_chng_trigger_type_e const trigger_type = RRC_STATE_UE_INFO_CHNG_TRIGGER_TYPE;
-      uint32_t const ran_param_id = ran_func->seq_report_sty[i].ran_param[j].id;
-      ran_param_def_t const* ran_param_def = ran_func->seq_report_sty[i].ran_param[j].def;
+      uint32_t const ran_param_id = report_sty->ran_param[j].id;
+      ran_param_def_t const* ran_param_def = report_sty->ran_param[j].def;
       // Fill Event Trigger
       rc_sub.et.frmt_4.ue_info_chng[j] = fill_ue_info_chng(trigger_type);
       // Fill Action Definition
@@ -302,6 +561,14 @@ size_t find_sm_idx(sm_ran_function_t* rf, size_t sz, bool (*f)(sm_ran_function_t
   assert(0 != 0 && "SM ID could not be found in the RAN Function List");
 }
 
+static ran_func_def_report_t *get_rc_report_cap(const e2_node_connected_xapp_t *n, const int RC_ran_function)
+{
+  size_t const idx = find_sm_idx(n->rf, n->len_rf, eq_sm, RC_ran_function);
+  assert(n->rf[idx].defn.type == RC_RAN_FUNC_DEF_E && "RC is not the received RAN Function");
+
+  return n->rf[idx].defn.rc.report;
+}
+
 int main(int argc, char* argv[])
 {
   fr_args_t args = init_fr_args(argc, argv);
@@ -322,7 +589,7 @@ int main(int argc, char* argv[])
   assert(rc == 0);
 
   // RAN Control REPORT handle
-  sm_ans_xapp_t* hndl = calloc(nodes.len, sizeof(sm_ans_xapp_t));
+  sm_ans_xapp_t** hndl = (sm_ans_xapp_t**)calloc(nodes.len, sizeof(sm_ans_xapp_t*));
   assert(hndl != NULL);
 
   ////////////
@@ -332,18 +599,22 @@ int main(int argc, char* argv[])
 
   for (int i = 0; i < nodes.len; i++) {
     e2_node_connected_xapp_t* n = &nodes.n[i];
-
-    size_t const idx = find_sm_idx(n->rf, n->len_rf, eq_sm, RC_ran_function);
-    assert(n->rf[idx].defn.type == RC_RAN_FUNC_DEF_E && "RC is not the received RAN Function");
+    ran_func_def_report_t *rc_report = get_rc_report_cap(n, RC_ran_function);
     // if REPORT Service is supported by E2 node, send SUBSCRIPTION message
-    if (n->rf[idx].defn.rc.report != NULL) {
-      // Generate RC SUBSCRIPTION message
-      rc_sub_data_t rc_sub = gen_rc_sub_msg(n->rf[idx].defn.rc.report);
+    if (rc_report != NULL) {
+      // Generate RC SUBSCRIPTION messages
+      const size_t sz_report_styles = rc_report->sz_seq_report_sty;
+      hndl[i] = calloc(sz_report_styles, sizeof(sm_ans_xapp_t));
+      assert(hndl[i] != NULL);
 
-      hndl[i] = report_sm_xapp_api(&n->id, RC_ran_function, &rc_sub, sm_cb_rc);
-      assert(hndl[i].success == true);
+      for (size_t j = 0; j < sz_report_styles; j++) {
+        rc_sub_data_t rc_sub = gen_rc_sub_msg(&rc_report->seq_report_sty[j]);
 
-      free_rc_sub_data(&rc_sub);
+        hndl[i][j] = report_sm_xapp_api(&n->id, RC_ran_function, &rc_sub, sm_cb_rc);
+        assert(hndl[i][j].success == true);
+
+        free_rc_sub_data(&rc_sub);
+      }
     }
   }
   ////////////
@@ -352,10 +623,16 @@ int main(int argc, char* argv[])
 
   sleep(20);
 
-  for (int i = 0; i < nodes.len; ++i) {
+  for (int i = 0; i < nodes.len; i++) {
     // Remove the handle previously returned
-    if (hndl[i].success == true)
-      rm_report_sm_xapp_api(hndl[i].u.handle);
+    e2_node_connected_xapp_t* n = &nodes.n[i];
+    ran_func_def_report_t *rc_report = get_rc_report_cap(n, RC_ran_function);
+    if (rc_report != NULL) {
+      for (size_t j = 0; j < rc_report->sz_seq_report_sty; j++) {
+        if (hndl[i][j].success == true)
+          rm_report_sm_xapp_api(hndl[i][j].u.handle);
+      }
+    }
   }
   free(hndl);
 
