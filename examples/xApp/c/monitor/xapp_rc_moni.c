@@ -34,6 +34,7 @@
 #include "NR_DL-DCCH-Message.h"
 #include "NR_RRCReconfiguration.h"
 #include "NR_CellGroupConfig.h"
+#include "NR_UL-DCCH-Message.h"
 
 typedef enum {    // 8.2.1 RAN Parameters for Report Service Style 1
   E2SM_RC_RS1_UE_EVENT_ID = 1,
@@ -97,44 +98,82 @@ static
 void log_int_ran_param_value_rrc_state(int64_t value)
 {
   if (value == RRC_CONNECTED_RRC_STATE_E2SM_RC) {
-    printf("RAN Parameter Value = RRC_Connected\n");
+    printf("RAN Parameter Value = RRC connected\n");
   } else if (value == RRC_INACTIVE_RRC_STATE_E2SM_RC) {
-    printf("RAN Parameter Value = RRC_Inactive\n");
+    printf("RAN Parameter Value = RRC inactive\n");
   } else if (value == RRC_IDLE_RRC_STATE_E2SM_RC) {
-    printf("RAN Parameter Value = RRC_Idle\n");
+    printf("RAN Parameter Value = RRC idle\n");
+  }
+}
+
+static
+void log_meas_report(const NR_MeasResults_t *results)
+{
+  for (int i = 0; i < results->measResultServingMOList.list.count; i++) {
+    NR_MeasResultServMO_t *measresultservmo = results->measResultServingMOList.list.array[i];
+    NR_MeasResultNR_t *measresultnr = &measresultservmo->measResultServingCell;
+    NR_MeasQuantityResults_t *mqr = measresultnr->measResult.cellResults.resultsSSB_Cell;
+
+    if (mqr != NULL) {
+      const long rrsrp = *mqr->rsrp - 156;
+      const float rrsrq = (float) (*mqr->rsrq - 87) / 2.0f;
+      const float rsinr = (float) (*mqr->sinr - 46) / 2.0f;
+      printf("resultsSSB-Cell: RSRP %ld [dBm] RSRQ %.1f [dB] SINR %.1f [dB]\n", rrsrp, rrsrq, rsinr);
+    } else {
+      printf("resultsSSB-Cell: empty.\n");
+    }
   }
 }
 
 //Print Octet String value
 static
-void log_octet_str_ran_param_value(byte_array_t octet_str, uint32_t id)
+void log_octet_str_ran_param_value(const e2sm_rc_ind_hdr_frmt_1_t *hdr, byte_array_t octet_str, uint32_t id)
 {
   switch (id) {
     case E2SM_RC_RS1_RRC_MESSAGE:
-      printf("\nDecode and print RRC Message!\n");
-      NR_DL_DCCH_Message_t *msg = NULL;
-      asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_DL_DCCH_Message,
-                                        (void **)&msg, octet_str.buf, octet_str.len, 0, 0);
-      assert(dec_rval.code == RC_OK);
-      xer_fprint(stdout, &asn_DEF_NR_DL_DCCH_Message, msg);
-
-      assert(msg->message.present == NR_DL_DCCH_MessageType_PR_c1);
-      assert(msg->message.choice.c1->present == NR_DL_DCCH_MessageType__c1_PR_rrcReconfiguration);
-      NR_RRCReconfiguration_t *reconfig = msg->message.choice.c1->choice.rrcReconfiguration;
-
-      assert(reconfig->criticalExtensions.present == NR_RRCReconfiguration__criticalExtensions_PR_rrcReconfiguration);
-      NR_RRCReconfiguration_IEs_t *ies = reconfig->criticalExtensions.choice.rrcReconfiguration;
-      assert(ies->nonCriticalExtension != NULL);
-      assert(ies->nonCriticalExtension->masterCellGroup != NULL);
-      OCTET_STRING_t *binary_cellGroupConfig = ies->nonCriticalExtension->masterCellGroup;
-      NR_CellGroupConfig_t *cellGroupConfig = NULL;
-      dec_rval = uper_decode(NULL, &asn_DEF_NR_CellGroupConfig,
-                             (void **)&cellGroupConfig, binary_cellGroupConfig->buf,
-                             binary_cellGroupConfig->size, 0, 0);
-      assert(dec_rval.code == RC_OK);
-      printf("Decoded CellGroupConfig message:\n");
-      xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, cellGroupConfig);
-      ASN_STRUCT_FREE(asn_DEF_NR_DL_DCCH_Message, msg);
+      if (*hdr->ev_trigger_id == 1) {
+        printf("\nDecode and print DL-DCCH message:\n");
+        NR_DL_DCCH_Message_t *msg = NULL;
+        asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_DL_DCCH_Message,
+                                          (void **)&msg, octet_str.buf, octet_str.len, 0, 0);
+        assert(dec_rval.code == RC_OK);
+        xer_fprint(stdout, &asn_DEF_NR_DL_DCCH_Message, msg);
+  
+        assert(msg->message.present == NR_DL_DCCH_MessageType_PR_c1);
+        assert(msg->message.choice.c1->present == NR_DL_DCCH_MessageType__c1_PR_rrcReconfiguration);
+        NR_RRCReconfiguration_t *reconfig = msg->message.choice.c1->choice.rrcReconfiguration;
+  
+        assert(reconfig->criticalExtensions.present == NR_RRCReconfiguration__criticalExtensions_PR_rrcReconfiguration);
+        NR_RRCReconfiguration_IEs_t *ies = reconfig->criticalExtensions.choice.rrcReconfiguration;
+        assert(ies->nonCriticalExtension != NULL);
+        assert(ies->nonCriticalExtension->masterCellGroup != NULL);
+        OCTET_STRING_t *binary_cellGroupConfig = ies->nonCriticalExtension->masterCellGroup;
+        NR_CellGroupConfig_t *cellGroupConfig = NULL;
+        dec_rval = uper_decode(NULL, &asn_DEF_NR_CellGroupConfig,
+                               (void **)&cellGroupConfig, binary_cellGroupConfig->buf,
+                               binary_cellGroupConfig->size, 0, 0);
+        assert(dec_rval.code == RC_OK);
+        printf("\nDecode and print CellGroupConfig message:\n");
+        xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, cellGroupConfig);
+        ASN_STRUCT_FREE(asn_DEF_NR_DL_DCCH_Message, msg);
+      } else if (*hdr->ev_trigger_id == 2 || *hdr->ev_trigger_id == 3) {
+        printf("\nDecode and print UL-DCCH message:\n");
+        NR_UL_DCCH_Message_t *msg = NULL;
+        asn_dec_rval_t dec_rval = uper_decode(NULL, &asn_DEF_NR_UL_DCCH_Message,
+                                          (void **)&msg, octet_str.buf, octet_str.len, 0, 0);
+        assert(dec_rval.code == RC_OK);
+        xer_fprint(stdout, &asn_DEF_NR_UL_DCCH_Message, msg);
+        assert(msg->message.present == NR_UL_DCCH_MessageType_PR_c1);
+        if (msg->message.choice.c1->present == NR_UL_DCCH_MessageType__c1_PR_measurementReport) {
+          NR_MeasResults_t *results = &msg->message.choice.c1->choice.measurementReport->criticalExtensions.choice.measurementReport->measResults;
+          if (results == NULL) {
+            printf("Received RRC MeasaurementReport message but no measurements are filled.\n");
+          } else {
+            log_meas_report(results);
+          }
+        }
+        ASN_STRUCT_FREE(asn_DEF_NR_UL_DCCH_Message, msg);
+      }
       break;
 
     default:
@@ -143,7 +182,7 @@ void log_octet_str_ran_param_value(byte_array_t octet_str, uint32_t id)
 }
 
 static
-void log_element_ran_param_value(ran_parameter_value_t* param_value, uint32_t id)
+void log_element_ran_param_value(const e2sm_rc_ind_hdr_frmt_1_t *hdr, ran_parameter_value_t* param_value, uint32_t id)
 {
   assert(param_value != NULL);
 
@@ -153,7 +192,7 @@ void log_element_ran_param_value(ran_parameter_value_t* param_value, uint32_t id
       break;
 
     case OCTET_STRING_RAN_PARAMETER_VALUE:
-      log_octet_str_ran_param_value(param_value->octet_str_ran, id);
+      log_octet_str_ran_param_value(hdr, param_value->octet_str_ran, id);
       break;
 
     default:
@@ -193,39 +232,31 @@ void log_ran_param_name_frmt_1(uint32_t id)
 }
 
 static
-void log_ind_msg_frmt_1(const e2sm_rc_ind_msg_t* msg)
+void log_ind_1_1(const e2sm_rc_ind_hdr_frmt_1_t *hdr, const e2sm_rc_ind_msg_frmt_1_t* msg)
 {
-  /* log properly format 1 with "RRC Message" and "UE ID" RAN Parameter IDs*/
-  const e2sm_rc_ind_msg_frmt_1_t* ind_msg_frmt_1 = &msg->frmt_1;
-
-  static int counter = 1;
   {
     lock_guard(&mtx);
 
-    printf("\n%7d RC Indication Message\n", counter);
-
     // List parameters
-    for (size_t j = 0; j < ind_msg_frmt_1->sz_seq_ran_param; j++) {
-      seq_ran_param_t* const ran_param_item = &ind_msg_frmt_1->seq_ran_param[j];
+    for (size_t j = 0; j < msg->sz_seq_ran_param; j++) {
+      seq_ran_param_t* const ran_param_item = &msg->seq_ran_param[j];
 
       log_ran_param_name_frmt_1(ran_param_item->ran_param_id);
-      printf("RAN Parameter ID is: %d\n", ran_param_item->ran_param_id);
+      printf("RAN Parameter ID = %d\n", ran_param_item->ran_param_id);
 
       switch (ran_param_item->ran_param_val.type) {
         case ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE:
-          log_element_ran_param_value(ran_param_item->ran_param_val.flag_false, ran_param_item->ran_param_id);
+          log_element_ran_param_value(hdr, ran_param_item->ran_param_val.flag_false, ran_param_item->ran_param_id);
           break;
 
         case ELEMENT_KEY_FLAG_TRUE_RAN_PARAMETER_VAL_TYPE:
-          log_element_ran_param_value(ran_param_item->ran_param_val.flag_true, ran_param_item->ran_param_id);
+          log_element_ran_param_value(hdr, ran_param_item->ran_param_val.flag_true, ran_param_item->ran_param_id);
           break;
 
         default:
           printf("Add corresponding function for the RAN Parameter Value Type (other than element)\n");
       }
     }
-
-    counter++;
   }
 }
 
@@ -243,18 +274,15 @@ void log_ran_param_name_frmt_2(uint32_t id)
 }
 
 static
-void log_ind_msg_frmt_2(const e2sm_rc_ind_msg_t* msg)
+void log_ind_1_2(const e2sm_rc_ind_hdr_frmt_1_t *hdr, const e2sm_rc_ind_msg_frmt_2_t* msg)
 {
-  const e2sm_rc_ind_msg_frmt_2_t* ind_msg_frmt_2 = &msg->frmt_2;
+  assert(hdr != NULL);
 
-  static int counter = 1;
   {
     lock_guard(&mtx);
 
-    printf("\n%7d RC Indication Message\n", counter);
-
-    for (size_t i = 0; i < ind_msg_frmt_2->sz_seq_ue_id; i++) {
-      seq_ue_id_t* const ue_id_item = &ind_msg_frmt_2->seq_ue_id[i];
+    for (size_t i = 0; i < msg->sz_seq_ue_id; i++) {
+      seq_ue_id_t* const ue_id_item = &msg->seq_ue_id[i];
 
       switch (ue_id_item->ue_id.type) {
         case GNB_UE_ID_E2SM:
@@ -274,11 +302,11 @@ void log_ind_msg_frmt_2(const e2sm_rc_ind_msg_t* msg)
 
         switch (ran_param_item->ran_param_val.type) {
           case ELEMENT_KEY_FLAG_FALSE_RAN_PARAMETER_VAL_TYPE:
-            log_element_ran_param_value(ran_param_item->ran_param_val.flag_false, ran_param_item->ran_param_id);
+            log_element_ran_param_value(hdr, ran_param_item->ran_param_val.flag_false, ran_param_item->ran_param_id);
             break;
 
           case ELEMENT_KEY_FLAG_TRUE_RAN_PARAMETER_VAL_TYPE:
-            log_element_ran_param_value(ran_param_item->ran_param_val.flag_true, ran_param_item->ran_param_id);
+            log_element_ran_param_value(hdr, ran_param_item->ran_param_val.flag_true, ran_param_item->ran_param_id);
             break;
 
           default:
@@ -286,21 +314,8 @@ void log_ind_msg_frmt_2(const e2sm_rc_ind_msg_t* msg)
         }
       }
     }
-
-    counter++;
   }
 }
-
-typedef void (*log_ind_msg_data)(const e2sm_rc_ind_msg_t* msg);
-
-static
-log_ind_msg_data rc_msg[END_E2SM_RC_IND_MSG] = {
-  log_ind_msg_frmt_1,
-  log_ind_msg_frmt_2,
-  NULL,
-  NULL,
-  NULL,
-};
 
 static
 void sm_cb_rc(sm_ag_if_rd_t const* rd)
@@ -308,9 +323,24 @@ void sm_cb_rc(sm_ag_if_rd_t const* rd)
   assert(rd != NULL);
   assert(rd->type == INDICATION_MSG_AGENT_IF_ANS_V0);
 
-  // log properly INDICATION formats
-  const e2sm_rc_ind_msg_format_e type = rd->ind.rc.ind.msg.format;
-  rc_msg[type](&rd->ind.rc.ind.msg);
+  static int counter = 1;
+  // {
+  //   lock_guard(&mtx);
+    printf("\n%7d RC Indication Message received:\n", counter);
+
+    // log properly INDICATION formats
+    const e2sm_rc_ind_hdr_format_e hdr_type = rd->ind.rc.ind.hdr.format;
+    const e2sm_rc_ind_msg_format_e msg_type = rd->ind.rc.ind.msg.format;
+    if (hdr_type == FORMAT_1_E2SM_RC_IND_HDR && msg_type == FORMAT_1_E2SM_RC_IND_MSG) {
+      log_ind_1_1(&rd->ind.rc.ind.hdr.frmt_1, &rd->ind.rc.ind.msg.frmt_1);
+    } else if (hdr_type == FORMAT_1_E2SM_RC_IND_HDR && msg_type == FORMAT_2_E2SM_RC_IND_MSG) {
+      log_ind_1_2(&rd->ind.rc.ind.hdr.frmt_1, &rd->ind.rc.ind.msg.frmt_2);
+    } else {
+      printf("Unknown RIC indication message received.\n");
+    }
+
+  // }
+  counter++;
 }
 
 
@@ -398,36 +428,28 @@ param_report_def_t fill_param_report(uint32_t const ran_param_id, ran_param_def_
 }
 
 static
-rrc_msg_id_t fill_rrc_msg_id_3(void)
+rrc_msg_id_t fill_rrc_msg_id_3(const nr_rrc_class_e nr_class, const uint32_t msg_id)
 {
   rrc_msg_id_t rrc_msg_id = {0};
 
   // CHOICE RRC Message Type
   rrc_msg_id.type = NR_RRC_MESSAGE_ID;
 
-  switch (rrc_msg_id.type) {
-    case NR_RRC_MESSAGE_ID: {
-      rrc_msg_id.nr = DL_DCCH_NR_RRC_CLASS; // RRC Message Class
-      rrc_msg_id.rrc_msg_id = 1; // RRC Message ID
-      break;
-    }
-
-    default:
-      assert(false && "Add LTE RRC Message type. At the moment, only NR RRC Message type is supported");
-  }
+  rrc_msg_id.nr = nr_class; // RRC Message Class
+  rrc_msg_id.rrc_msg_id = msg_id; // RRC Message ID
 
   return rrc_msg_id;
 }
 
 static
-msg_ev_trg_t fill_msg_ev_trig_3(msg_type_ev_trg_e const trigger_type)
+msg_ev_trg_t fill_msg_ev_trig_3(msg_type_ev_trg_e const trigger_type, const uint16_t cond_id, const nr_rrc_class_e nr_class, const uint32_t msg_id)
 {
   msg_ev_trg_t msg_ev_trig = {0};
 
   //  Event Trigger Condition ID
   //  Mandatory
   //  9.3.21
-  msg_ev_trig.ev_trigger_cond_id = 1; // this parameter contains rnd value, but must be matched in ind hdr
+  msg_ev_trig.ev_trigger_cond_id = cond_id; // this parameter contains rnd value, but must be matched in ind hdr
   /* For each information change configured, Event Trigger Condition ID is assigned
   so that E2 Node can reply to Near-RT RIC in the RIC INDICATION message to inform
   which event(s) are the cause for triggering. */
@@ -436,7 +458,7 @@ msg_ev_trg_t fill_msg_ev_trig_3(msg_type_ev_trg_e const trigger_type)
   msg_ev_trig.msg_type = trigger_type;
 
   if (trigger_type == RRC_MSG_MSG_TYPE_EV_TRG) {
-    msg_ev_trig.rrc_msg = fill_rrc_msg_id_3();
+    msg_ev_trig.rrc_msg = fill_rrc_msg_id_3(nr_class, msg_id);
   }
   else {
     assert(false && "Incorrect Trigger Type for Event Trigger Type 1!");
@@ -474,9 +496,7 @@ rc_sub_data_t gen_rc_sub_msg(const seq_report_sty_t *report_sty)
     // Generate Event Trigger
     rc_sub.et.format = report_sty->ev_trig_type;
     assert(rc_sub.et.format == FORMAT_1_E2SM_RC_EV_TRIGGER_FORMAT && "Event Trigger Format received not valid");
-    rc_sub.et.frmt_1.sz_msg_ev_trg = sz_1;
-    rc_sub.et.frmt_1.msg_ev_trg = calloc(sz_1, sizeof(msg_ev_trg_t));
-    assert(rc_sub.et.frmt_1.msg_ev_trg != NULL && "Memory exhausted");
+
 
     // Generate Action Definition
     rc_sub.sz_ad = 1;
@@ -489,16 +509,22 @@ rc_sub_data_t gen_rc_sub_msg(const seq_report_sty_t *report_sty)
     rc_sub.ad[0].frmt_1.param_report_def = calloc(sz_1, sizeof(param_report_def_t));
     assert(rc_sub.ad[0].frmt_1.param_report_def != NULL && "Memory exhausted");
 
+    // Fill Event Trigger
+    const msg_type_ev_trg_e trigger_type = RRC_MSG_MSG_TYPE_EV_TRG;
+
+    const size_t rrc_copy_len = 3;
+    rc_sub.et.frmt_1.sz_msg_ev_trg = rrc_copy_len;
+    rc_sub.et.frmt_1.msg_ev_trg = calloc(rrc_copy_len, sizeof(msg_ev_trg_t));
+    assert(rc_sub.et.frmt_1.msg_ev_trg != NULL && "Memory exhausted");
+
+    rc_sub.et.frmt_1.msg_ev_trg[0] = fill_msg_ev_trig_3(trigger_type, 1, DL_DCCH_NR_RRC_CLASS, 1);
+    rc_sub.et.frmt_1.msg_ev_trg[1] = fill_msg_ev_trig_3(trigger_type, 2, UL_DCCH_NR_RRC_CLASS, 1);
+    rc_sub.et.frmt_1.msg_ev_trg[2] = fill_msg_ev_trig_3(trigger_type, 3, UL_DCCH_NR_RRC_CLASS, 4);
+
     // Fill RAN Parameter Info
     for (size_t j = 0; j < sz_1; j++) {
-      msg_type_ev_trg_e const trigger_type = RRC_MSG_MSG_TYPE_EV_TRG;
       uint32_t const ran_param_id = report_sty->ran_param[j].id;
       ran_param_def_t const* ran_param_def = report_sty->ran_param[j].def;
-
-      // Fill Event Trigger
-      if (cmp_str_ba("RRC Message", report_sty->ran_param[j].name) == 0) {
-        rc_sub.et.frmt_1.msg_ev_trg[j] = fill_msg_ev_trig_3(trigger_type);
-      }
 
       // Fill Action Definition
       rc_sub.ad[0].frmt_1.param_report_def[j] = fill_param_report(ran_param_id, ran_param_def);
