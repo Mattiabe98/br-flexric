@@ -25,7 +25,7 @@
 #   Valid for UBI 9.x | RHEL 9.x
 #
 #---------------------------------------------------------------------
-# BUILDER IMAGE
+# BASE IMAGE
 #---------------------------------------------------------------------
 FROM registry.access.redhat.com/ubi9/ubi:latest AS oai-flexric-base
 ENV TZ=Europe/Paris
@@ -76,6 +76,9 @@ RUN git clone https://github.com/swig/swig.git && \
     make install" && \
     ldconfig
 
+#---------------------------------------------------------------------
+# BUILDER IMAGE
+#---------------------------------------------------------------------
 FROM oai-flexric-base as oai-flexric-builder
 ARG E2AP_VERSION=E2AP_V3
 ARG KPM_VERSION=KPM_V3_00
