@@ -30,27 +30,47 @@
 
 bool eq_global_e2_node_id(const global_e2_node_id_t* m0, const global_e2_node_id_t* m1)
 {
+  printf("Entering eq_global_e2_node_id\n"); // Add this line
+
   if(m0 == m1) return true;
 
-  if(m0 == NULL || m1 == NULL) return false;
+  if(m0 == NULL || m1 == NULL) {
+    printf("One of the node IDs is NULL!\n"); // Add this line
+    return false;
+  }
 
-  if(m0->type != m1->type)
+  if(m0->type != m1->type) {
+     printf("Node types differ: %d != %d\n", m0->type, m1->type); // Add this line
      return false;
+  }
 
-  if(eq_e2ap_plmn(&m0->plmn, &m1->plmn) == false)
+  if(eq_e2ap_plmn(&m0->plmn, &m1->plmn) == false) {
+    printf("PLMNs differ\n"); // Add this line
     return false;
-      
-  if(eq_e2ap_gnb_id(m0->nb_id, m1->nb_id) == false)
+  }
+
+  if(eq_e2ap_gnb_id(m0->nb_id, m1->nb_id) == false) {
+    printf("GNB IDs differ\n"); // Add this line
     return false;
+  }
 
   // This is an abuse but the standard does not define how to
   // differentiate between ngran_gNB_CU and ngran_gNB
   if (E2AP_NODE_IS_CU(m0->type) || E2AP_NODE_IS_CUUP(m0->type) || E2AP_NODE_IS_DU(m0->type)) {
-    assert(m0->cu_du_id != NULL && m1->cu_du_id != NULL );
-    if(*m0->cu_du_id != *m1->cu_du_id)
+    printf("Comparing CU/DU IDs\n"); // Add this line
+    if(m0->cu_du_id == NULL || m1->cu_du_id == NULL){
+      printf("cu_du_id is NULL! m0: %p, m1: %p\n", (void*)m0->cu_du_id, (void*)m1->cu_du_id);
       return false;
+    }
+
+    assert(m0->cu_du_id != NULL && m1->cu_du_id != NULL );
+    if(*m0->cu_du_id != *m1->cu_du_id) {
+      printf("CU/DU IDs differ: %d != %d\n", *m0->cu_du_id, *m1->cu_du_id); // Add this line
+      return false;
+    }
   }
 
+  printf("Node IDs are equal!\n"); // Add this line
   return true;
 }
 
