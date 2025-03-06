@@ -1075,7 +1075,7 @@ kpm_act_def_format_4_t gen_act_def_frmt_4(const char** action, uint32_t period_m
 
   test_cond_value_t* test_cond_value = static_cast<test_cond_value_t*>(calloc(1, sizeof(test_cond_value_t)));
   assert(test_cond_value != NULL && "Memory exhausted");
-  test_cond_value->type = INTEGER_TEST_COND_VALUE;
+  test_cond_value->type = OCTET_STRING_TEST_COND_VALUE;
   test_cond_value->int_value = static_cast<int64_t*>(malloc(sizeof(int64_t)));
   assert(test_cond_value->int_value != NULL && "Memory exhausted");
   *test_cond_value->int_value = 1;
